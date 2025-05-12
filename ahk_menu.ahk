@@ -1,7 +1,7 @@
 ﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 
-global scriptsFolder := "D:\Games\Tools\ahk_scripts" ; folder with the scripts that will become a button in the GUI menu
+global scriptsFolder := "D:\Games\Tools\ahk_scripts" ; folder with the scripts that will become buttons in the GUI menu
 global overlayVisible := false
 global scriptList := Map()
 global totalScripts := 0
