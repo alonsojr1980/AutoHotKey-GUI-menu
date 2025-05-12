@@ -1,2 +1,2 @@
 # AutoHotKey-GUI-menu
-A GUI menu for easier couch gaming
+A AutoHotKey v2 GUI menu for easier couch gaming
