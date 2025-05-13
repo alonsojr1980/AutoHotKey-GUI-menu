@@ -1,5 +1,5 @@
 # AutoHotKey-GUI-menu
-A AutoHotKey v2 GUI menu for easier couch gaming
+An AutoHotKey v2 GUI menu for easier couch gaming
 
 ## How to use it:
 
