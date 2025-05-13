@@ -1,1 +1,1 @@
-Send "#^{Right}"
+Send "#+{Right}"

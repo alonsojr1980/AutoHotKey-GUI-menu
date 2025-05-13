@@ -1,7 +1,7 @@
 ﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 
-global scriptsFolder := "D:\Games\Tools\ahk_scripts" ; folder with the scripts that will become buttons in the GUI menu
+global scriptsFolder := A_ScriptDir "\scripts" ; folder with scripts that will become menu buttons. Sub-folder will become sub-menus
 global overlayVisible := false
 global scriptList := Map()
 global totalScripts := 0
@@ -19,11 +19,16 @@ ToggleOverlay() {
         ShowOverlay()
 }
 
-ShowOverlay() {
+ShowOverlay(currentFolder := "") {
     global currentGui, overlayVisible, scriptList, totalScripts, scriptsFolder, originalWindow, selectedButton
 
-    ; Store original window and force focus to GUI
-    originalWindow := WinExist("A")
+    if (currentFolder == "")
+        currentFolder := scriptsFolder
+
+    ; Store original window only when overlay is first shown
+    if (!overlayVisible)
+        originalWindow := WinExist("A")
+    
     if currentGui != ""
         GuiDestroy()
     
@@ -31,80 +36,94 @@ ShowOverlay() {
     scriptList := Map()
     selectedButton := 1
 
-    ; Create GUI
     currentGui := Gui(, "AutoHotkey Script Launcher")
     currentGui.Opt("+AlwaysOnTop +ToolWindow -Caption +Border")
     currentGui.SetFont("s10", "Segoe UI")
     currentGui.AddText("w200 Center", "AutoHotkey Script Launcher")
 
-    ; Add script buttons
     i := 1
-    Loop Files scriptsFolder "\*.ahk" {
+
+    ; Add Back button if not in root
+    if (currentFolder != scriptsFolder) {
+        parentDir := GetParentDir(currentFolder)
+        scriptList[i] := {type: "back", path: parentDir, name: ".."}
+        btn := currentGui.AddButton("w200 vBtn" i, "← Back")
+        btn.OnEvent("Click", LaunchScript.Bind(i))
+        i++
+    }
+
+    ; Add directories as sub-menus
+    Loop Files currentFolder "\*", "D" {
+        dirPath := A_LoopFileFullPath
+        dirName := A_LoopFileName
+        if (dirName = "." || dirName = "..")
+            continue
+        scriptList[i] := {type: "dir", path: dirPath, name: dirName}
+        btn := currentGui.AddButton("w200 vBtn" i, dirName " ▶")
+        btn.OnEvent("Click", LaunchScript.Bind(i))
+        i++
+    }
+
+    ; Add scripts
+    Loop Files currentFolder "\*.ahk", "F" {
         scriptPath := A_LoopFileFullPath
         scriptName := A_LoopFileName
-        scriptList[i] := scriptPath
-
+        scriptList[i] := {type: "script", path: scriptPath, name: scriptName}
         btn := currentGui.AddButton("w200 vBtn" i, scriptName)
         btn.OnEvent("Click", LaunchScript.Bind(i))
         i++
     }
+
     totalScripts := i - 1
-    
+
     if (totalScripts = 0) {
         currentGui.AddText("w200 Center", "No scripts found!")
     }
-    
-    ; Event handlers
+
     currentGui.OnEvent("Close", HideOverlay)
     currentGui.OnEvent("Escape", HideOverlay)
-    
-    ; Show and focus GUI
     currentGui.Show("AutoSize Center")
     WinActivate(currentGui.Hwnd)
-    
-    ; Highlight first button
     HighlightButton(selectedButton)
-    
-    ; Start gamepad polling
     SetTimer(CheckGamepad, gamepadPollInterval)
+}
+
+GetParentDir(path) {
+    SplitPath path, , &parent
+    return parent
 }
 
 HideOverlay(*) {
     global currentGui, overlayVisible, originalWindow
-    
-    SetTimer(CheckGamepad, 0)  ; Stop gamepad polling
+    SetTimer(CheckGamepad, 0)
     if currentGui != ""
         currentGui.Hide()
     overlayVisible := false
-    
-    ; Return focus to original window
-    if WinExist(originalWindow) {
+    if WinExist(originalWindow)
         try WinActivate(originalWindow)
-    }
 }
 
 LaunchScript(index, *) {
     global scriptList
-    HideOverlay()
-    Sleep(500)
-    try Run scriptList[index]
+    item := scriptList[index]
+    if (item.type = "script") {
+        HideOverlay()
+        Sleep(500)
+        try Run(item.path)
+    } else if (item.type = "dir" || item.type = "back") {
+        ShowOverlay(item.path)
+    }
 }
 
+; Remaining functions (HighlightButton, CheckGamepad, GuiDestroy) remain unchanged
 HighlightButton(index) {
     global currentGui, selectedButton, totalScripts
-    
     if (totalScripts = 0)
         return
-    
-    ; Validate index
     index := Max(1, Min(index, totalScripts))
-    
-    ; Reset all buttons to default
     Loop totalScripts {
         try currentGui["Btn" A_Index].Opt("BackgroundDefault")
     }
-    
-    ; Highlight selected button
     try {
         currentGui["Btn" index].Opt("BackgroundYellow")
         currentGui["Btn" index].Focus()
@@ -114,34 +133,27 @@ HighlightButton(index) {
 
 CheckGamepad() {
     global selectedButton, totalScripts, overlayVisible
-    
     if (!overlayVisible || totalScripts = 0)
         return
-    
-    ; Get gamepad state
-    aButton := GetKeyState("Joy1")  ; A button
-    pov := GetKeyState("JoyPOV")    ; D-pad
-    
-    ; D-pad navigation
-    if (pov = 0) {  ; Up
+    aButton := GetKeyState("Joy1")
+    pov := GetKeyState("JoyPOV")
+    if (pov = 0) {
         if (selectedButton > 1) {
             HighlightButton(selectedButton - 1)
             SoundBeep(800, 30)
-            Sleep(200)  ; Debounce
+            Sleep(200)
         }
     }
-    else if (pov = 18000) {  ; Down
+    else if (pov = 18000) {
         if (selectedButton < totalScripts) {
             HighlightButton(selectedButton + 1)
             SoundBeep(600, 30)
-            Sleep(200)  ; Debounce
+            Sleep(200)
         }
     }
-    
-    ; A button press
     if (aButton) {
         LaunchScript(selectedButton)
-        Sleep(300)  ; Debounce
+        Sleep(300)
     }
 }
 
