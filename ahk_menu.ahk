@@ -1,7 +1,7 @@
 ﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 
-global scriptsFolder := A_ScriptDir "\scripts" ; folder with scripts that will become menu buttons. Sub-folder will become sub-menus
+global scriptsFolder := A_ScriptDir "\scripts"
 global overlayVisible := false
 global scriptList := Map()
 global totalScripts := 0
@@ -25,7 +25,6 @@ ShowOverlay(currentFolder := "") {
     if (currentFolder == "")
         currentFolder := scriptsFolder
 
-    ; Store original window only when overlay is first shown
     if (!overlayVisible)
         originalWindow := WinExist("A")
     
@@ -36,14 +35,14 @@ ShowOverlay(currentFolder := "") {
     scriptList := Map()
     selectedButton := 1
 
-    currentGui := Gui(, "AutoHotkey Script Launcher")
+    currentGui := Gui(, "Script Launcher")
     currentGui.Opt("+AlwaysOnTop +ToolWindow -Caption +Border")
     currentGui.SetFont("s10", "Segoe UI")
-    currentGui.AddText("w200 Center", "AutoHotkey Script Launcher")
+    currentGui.AddText("w200 Center", "Script Launcher")
 
     i := 1
 
-    ; Add Back button if not in root
+    ; Back button
     if (currentFolder != scriptsFolder) {
         parentDir := GetParentDir(currentFolder)
         scriptList[i] := {type: "back", path: parentDir, name: ".."}
@@ -52,7 +51,7 @@ ShowOverlay(currentFolder := "") {
         i++
     }
 
-    ; Add directories as sub-menus
+    ; Directories
     Loop Files currentFolder "\*", "D" {
         dirPath := A_LoopFileFullPath
         dirName := A_LoopFileName
@@ -64,25 +63,47 @@ ShowOverlay(currentFolder := "") {
         i++
     }
 
-    ; Add scripts
+    ; Scripts
     Loop Files currentFolder "\*.ahk", "F" {
         scriptPath := A_LoopFileFullPath
         scriptName := A_LoopFileName
-        scriptList[i] := {type: "script", path: scriptPath, name: scriptName}
-        btn := currentGui.AddButton("w200 vBtn" i, scriptName)
-        btn.OnEvent("Click", LaunchScript.Bind(i))
+        subMenuCaption := ""
+        
+        ; Check for sub-menu flag
+        Loop Read, scriptPath {
+            if RegExMatch(A_LoopReadLine, "i);@SubMenu\s+(.+)", &m) {
+                subMenuCaption := m[1]
+                break
+            }
+        }
+        
+        if (subMenuCaption != "") {
+            scriptList[i] := {type: "submenu", path: scriptPath, name: subMenuCaption}
+            btn := currentGui.AddButton("w200 vBtn" i, subMenuCaption " ▶")
+            btn.OnEvent("Click", LaunchScript.Bind(i))
+        } else {
+            scriptList[i] := {type: "script", path: scriptPath, name: scriptName}
+            btn := currentGui.AddButton("w200 vBtn" i, scriptName)
+            btn.OnEvent("Click", LaunchScript.Bind(i))
+        }
         i++
     }
 
     totalScripts := i - 1
 
-    if (totalScripts = 0) {
-        currentGui.AddText("w200 Center", "No scripts found!")
-    }
+    if (totalScripts = 0)
+        currentGui.AddText("w200 Center", "No items found")
 
+    ; Position GUI centered to active window
+    currentGui.Show("AutoSize Hide")
+    WinGetPos , , &guiW, &guiH, currentGui.Hwnd
+    WinGetPos &aX, &aY, &aW, &aH, originalWindow
+    xPos := aX + (aW - guiW) // 2
+    yPos := aY + (aH - guiH) // 2
+    currentGui.Show("x" xPos " y" yPos)
+    
     currentGui.OnEvent("Close", HideOverlay)
     currentGui.OnEvent("Escape", HideOverlay)
-    currentGui.Show("AutoSize Center")
     WinActivate(currentGui.Hwnd)
     HighlightButton(selectedButton)
     SetTimer(CheckGamepad, gamepadPollInterval)
@@ -106,16 +127,98 @@ HideOverlay(*) {
 LaunchScript(index, *) {
     global scriptList
     item := scriptList[index]
+    
     if (item.type = "script") {
         HideOverlay()
         Sleep(500)
         try Run(item.path)
-    } else if (item.type = "dir" || item.type = "back") {
+    }
+    else if (item.type = "dir" || item.type = "back") {
         ShowOverlay(item.path)
+    }
+    else if (item.type = "submenu") {
+        
+        ; Generate unique temp file
+        tempFile := A_Temp "\ahk_menu_" A_TickCount ".tmp"
+        
+        ; Execute sub-script and wait for output
+        RunWait '"' A_AhkPath '" "' item.path '" /GetButtons "' tempFile '"'
+        
+        ; Read and parse output
+        if FileExist(tempFile) {
+            buttonsStr := FileRead(tempFile)
+            FileDelete(tempFile)
+            buttons := []
+            Loop Parse, buttonsStr, "`n" {
+                if A_LoopField = ""
+                    continue
+                parts := StrSplit(A_LoopField, "|")
+                if parts.Length >= 2
+                    buttons.Push({name: parts[1], command: parts[2]})
+            }
+            if buttons.Length > 0
+                ShowSubMenu(buttons, item.path)
+        }
+			
     }
 }
 
-; Remaining functions (HighlightButton, CheckGamepad, GuiDestroy) remain unchanged
+ShowSubMenu(buttons, scriptPath) {
+    global currentGui, overlayVisible, scriptList, totalScripts, originalWindow, selectedButton
+
+    if currentGui != ""
+        GuiDestroy()
+    
+    overlayVisible := true
+    scriptList := Map()
+    selectedButton := 1
+
+    currentGui := Gui(, "Sub-Menu")
+    currentGui.Opt("+AlwaysOnTop +ToolWindow -Caption +Border")
+    currentGui.SetFont("s10", "Segoe UI")
+    currentGui.AddText("w200 Center", "Sub-Menu")
+
+    i := 1
+
+    ; Back button
+    scriptList[i] := {type: "back", path: "", name: ".."}
+    btn := currentGui.AddButton("w200 vBtn" i, "← Back")
+    btn.OnEvent("Click", LaunchScript.Bind(i))
+    i++
+
+    ; Sub-menu buttons
+    for btn in buttons {
+        scriptList[i] := {type: "submenu_btn", path: scriptPath, cmd: btn.command, name: btn.name}
+        btnGui := currentGui.AddButton("w200 vBtn" i, btn.name)
+        btnGui.OnEvent("Click", SubmenuButtonClick.Bind(i))
+        i++
+    }
+
+    totalScripts := i - 1
+
+    ; Position GUI centered to active window
+    currentGui.Show("AutoSize Hide")
+    WinGetPos , , &guiW, &guiH, currentGui.Hwnd
+    WinGetPos &aX, &aY, &aW, &aH, originalWindow
+    xPos := aX + (aW - guiW) // 2
+    yPos := aY + (aH - guiH) // 2
+    currentGui.Show("x" xPos " y" yPos)
+    
+    currentGui.OnEvent("Close", HideOverlay)
+    currentGui.OnEvent("Escape", HideOverlay)
+    WinActivate(currentGui.Hwnd)
+    HighlightButton(selectedButton)
+    SetTimer(CheckGamepad, gamepadPollInterval)
+}
+
+SubmenuButtonClick(index, *) {
+    global scriptList
+    item := scriptList[index]
+    HideOverlay()
+    Sleep(500)
+    Run('"' A_AhkPath '" "' item.path '" ' item.cmd)
+}
+
 HighlightButton(index) {
     global currentGui, selectedButton, totalScripts
     if (totalScripts = 0)
