@@ -201,15 +201,17 @@ CheckGamepad() {
     pov := GetKeyState("JoyPOV")
 	JoyY := GetKeyState("JoyY") 
 	
-    if (pov = 0 or JoyY < 30) {
-		Send "{Up}"
-    }
-    else if (pov = 18000 or JoyY > 70) {
-		Send "{Down}"
-    }
-    if (aButton) {
-        Send "{Enter}"
-    }
+	try {
+		if (pov = 0 or JoyY < 30) {
+			Send "{Up}"
+		}
+		else if (pov = 18000 or JoyY > 70) {
+			Send "{Down}"
+		}
+		if (aButton) {
+			Send "{Enter}"
+		}
+	}
 }
 
 GuiDestroy() {
